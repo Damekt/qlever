@@ -19,6 +19,7 @@
 #include "engine/NamedResultCacheSerializer.h"
 #include "engine/QueryExecutionContext.h"
 #include "engine/QueryPlanner.h"
+#include "engine/UpdateMetadata.h"
 #include "global/RuntimeParameters.h"
 #include "index/Index.h"
 #include "index/InputFileSpecification.h"
@@ -26,6 +27,7 @@
 #include "util/AllocatorWithLimit.h"
 #include "util/MemorySize/MemorySize.h"
 #include "util/Synchronized.h"
+#include "util/TimeTracer.h"
 #include "util/http/MediaTypes.h"
 
 namespace qlever {
@@ -311,6 +313,15 @@ class Qlever {
       std::function<void(std::string)> updateCallback =
           [](std::string) { /* the default is a noop*/ },
       bool pinSubtrees = false, bool pinResult = false) const;
+
+  // Execute an update operation. The function must have exclusive access to the
+  // DeltaTriples object.
+  UpdateMetadata processUpdateImpl(
+      const Index& index, const PlannedQuery& plannedUpdate,
+      ad_utility::SharedCancellationHandle cancellationHandle,
+      DeltaTriples& deltaTriples,
+      ad_utility::timer::TimeTracer& tracer =
+          ad_utility::timer::DEFAULT_TIME_TRACER);
 
   // Run the given parsed and planned query. The result is returned as a
   // string; see `src/util/http/MediaTypes.h` for the supported formats.

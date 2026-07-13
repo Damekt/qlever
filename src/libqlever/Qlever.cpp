@@ -11,13 +11,16 @@
 #include <memory>
 #include <stdexcept>
 
+#include "engine/ExecuteUpdate.h"
 #include "engine/ExportQueryExecutionTrees.h"
 #include "engine/MaterializedViews.h"
 #include "engine/QueryExecutionContext.h"
+#include "engine/UpdateMetadata.h"
 #include "index/IndexImpl.h"
 #include "index/TextIndexBuilder.h"
 #include "libqlever/QleverTypes.h"
 #include "parser/SparqlParser.h"
+#include "util/TimeTracer.h"
 #include "util/http/UrlParser.h"
 
 namespace qlever {
@@ -254,6 +257,32 @@ PlannedQuery Qlever::parseAndPlanQuery(
 
   return planQuery(std::move(parsedQuery), *qecPtr, std::move(handle),
                    timeLimit, requestTimer);
+}
+
+// ____________________________________________________________________________
+UpdateMetadata Qlever::processUpdateImpl(
+    const Index& index, const PlannedQuery& plannedUpdate,
+    ad_utility::SharedCancellationHandle cancellationHandle,
+    DeltaTriples& deltaTriples, ad_utility::timer::TimeTracer& tracer) {
+  const auto& qet = plannedUpdate.queryExecutionTree();
+  AD_CORRECTNESS_CHECK(plannedUpdate.parsedQuery().hasUpdateClause());
+
+  DeltaTriplesCount countBefore = deltaTriples.getCounts();
+  UpdateMetadata updateMetadata =
+      ExecuteUpdate::executeUpdate(index, plannedUpdate.parsedQuery(), qet,
+                                   deltaTriples, cancellationHandle, tracer);
+  updateMetadata.countBefore_ = countBefore;
+  updateMetadata.countAfter_ = deltaTriples.getCounts();
+
+  tracer.beginTrace("clearCache");
+  // Clear the cache, because all cache entries have been invalidated by
+  // the update anyway (The index of the located triples snapshot is
+  // part of the cache key).
+  cache_.clearAll();
+  namedResultCache_.clear();
+  tracer.endTrace("clearCache");
+
+  return updateMetadata;
 }
 
 // ___________________________________________________________________________
